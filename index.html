@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Slice</title>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f0;color:#1a1a1a;max-width:480px;margin:0 auto;padding-bottom:70px}
+#login-screen{position:fixed;inset:0;background:#f5f5f0;z-index:999;display:flex;align-items:center;justify-content:center;padding:24px}
+#login-screen.hidden{display:none}
+.auth-box{background:#fff;border-radius:16px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 2px 12px rgba(0,0,0,.09)}
+.auth-logo{font-size:28px;font-weight:800;color:#1a7a4a;margin-bottom:4px}
+.auth-sub{font-size:13px;color:#888;margin-bottom:20px}
+.auth-label{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;margin-top:12px}
+.auth-input{width:100%;padding:10px 12px;font-size:14px;border-radius:10px;border:1px solid #ddd;background:#fafafa;font-family:inherit}
+.auth-btn{width:100%;background:#1a7a4a;color:#fff;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:700;cursor:pointer;margin-top:16px}
+.auth-err{font-size:13px;color:#e53e3e;margin-top:8px;text-align:center;min-height:16px}
+h1{font-size:20px;font-weight:700}
+.header{display:flex;justify-content:space-between;align-items:center;padding:14px 16px 8px}
+.header-right{display:flex;gap:10px;align-items:center}
+.logged-as{font-size:11px;color:#888}
+.logout-btn,.reset-btn{font-size:12px;background:transparent;border:none;cursor:pointer;padding:0}
+.logout-btn{color:#888}.reset-btn{color:#e53e3e}
+.nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#fff;border-top:1px solid #eee;display:flex;z-index:98}
+.nav-btn{flex:1;padding:11px 0;font-size:11px;font-weight:600;color:#888;background:transparent;border:none;cursor:pointer}
+.nav-btn.active{color:#1a7a4a;border-top:2px solid #1a7a4a}
+.page{display:none;padding:0 16px}
+.page.active{display:block}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.stat{background:#fff;border-radius:12px;padding:12px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+.stat-label{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
+.stat-val{font-size:17px;font-weight:700}
+.profit{color:#1a7a4a}
+.section-title{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px}
+.item{background:#fff;border-radius:12px;padding:10px 12px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.item-top{display:flex;align-items:center;gap:8px}
+.item-info{flex:1}
+.item-name{font-size:14px;font-weight:600}
+.item-meta{font-size:11px;color:#888;margin-top:2px}
+.item-right{display:flex;align-items:center;gap:6px}
+.stock{font-size:12px;color:#888;min-width:36px;text-align:center}
+.stock.low{color:#d97706;font-weight:600}
+.stock.out{color:#e53e3e;font-weight:600}
+button{border:1px solid #ddd;background:#fff;border-radius:8px;cursor:pointer;font-size:13px;padding:6px 11px;font-family:inherit;font-weight:500}
+button:active{transform:scale(0.96)}
+.btn-green{color:#1a7a4a;border-color:#6ee7b7}
+.btn-red{color:#e53e3e;border-color:#fca5a5}
+.restock-box{display:flex;gap:6px;margin-top:8px;align-items:center}
+.restock-box input{width:90px;padding:6px 8px;font-size:13px;border-radius:8px;border:1px solid #ddd;background:#fafafa}
+.add-form{background:#fff;border-radius:12px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,.07);display:grid;gap:8px;margin-bottom:16px}
+.row3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+input[type=text],input[type=number]{width:100%;padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-family:inherit}
+.checkout-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.c-item{background:#fff;border-radius:12px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);cursor:pointer;border:2px solid transparent;transition:border .12s;user-select:none}
+.c-item.selected{border-color:#1a7a4a}
+.c-item.disabled-item{opacity:.4;cursor:not-allowed}
+.c-item-name{font-size:13px;font-weight:600;margin-bottom:2px}
+.c-item-price{font-size:12px;color:#888}
+.c-item-stock{font-size:11px;color:#aaa;margin-top:4px}
+.c-item-stock.low{color:#d97706}
+.c-item-stock.out{color:#e53e3e}
+.basket{background:#fff;border-radius:12px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,.07);margin-bottom:12px}
+.basket-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f0f0f0}
+.basket-row:last-child{border-bottom:none}
+.b-name{flex:1;font-size:13px;font-weight:500}
+.b-qty{display:flex;align-items:center;gap:5px}
+.b-qty button{padding:4px 9px;font-size:13px}
+.b-price-input{width:88px;padding:5px 8px;font-size:13px;border-radius:8px;border:1px solid #ddd;background:#fafafa;text-align:right}
+.total-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.total-label{font-size:13px;color:#888}
+.total-val{font-size:22px;font-weight:700;color:#1a7a4a}
+.btn-checkout{width:100%;background:#1a7a4a;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:700;cursor:pointer}
+.btn-checkout:disabled{opacity:.35;cursor:not-allowed}
+.empty-basket{text-align:center;padding:20px;color:#aaa;font-size:13px}
+.log-box{background:#fff;border-radius:12px;padding:12px 14px;box-shadow:0 1px 3px rgba(0,0,0,.07);margin-bottom:16px}
+.log-item{font-size:12px;color:#555;padding:6px 0;border-bottom:1px solid #f0f0f0}
+.log-item:last-child{border-bottom:none}
+.log-time{color:#aaa;margin-right:6px}
+.analytic-card{background:#fff;border-radius:12px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,.07);margin-bottom:10px}
+.a-row{display:flex;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0}
+.a-row:last-child{border-bottom:none}
+.a-left{flex:1}
+.a-name{font-size:13px;font-weight:600}
+.a-detail{font-size:11px;color:#888;margin-top:2px}
+.bar-wrap{height:6px;background:#f0f0f0;border-radius:4px;margin-top:5px}
+.bar{height:6px;background:#1a7a4a;border-radius:4px}
+.a-profit{font-size:14px;font-weight:700;color:#1a7a4a;margin-left:12px;min-width:70px;text-align:right}
+.badge{font-size:10px;padding:2px 7px;border-radius:20px;font-weight:700;margin-left:5px}
+.b-gold{background:#fef3c7;color:#92400e}
+.b-silver{background:#f3f4f6;color:#374151}
+.b-bronze{background:#fde8d8;color:#9a3412}
+.user-card{background:#fff;border-radius:12px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);display:flex;align-items:center;gap:10px}
+.user-avatar{width:36px;height:36px;border-radius:50%;background:#f0faf5;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#1a7a4a;flex-shrink:0}
+.user-info{flex:1}
+.user-name{font-size:14px;font-weight:600}
+.user-role{font-size:11px;color:#888;margin-top:1px}
+.user-status{font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600}
+.status-active{background:#f0faf5;color:#1a7a4a}
+.status-disabled{background:#fef2f2;color:#e53e3e}
+.online-bar{background:#fff;border-radius:12px;padding:10px 14px;box-shadow:0 1px 3px rgba(0,0,0,.07);margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.online-dot{width:8px;height:8px;background:#1a7a4a;border-radius:50%;display:inline-block;margin-right:4px}
+.online-chip{font-size:12px;background:#f0faf5;color:#1a7a4a;border-radius:20px;padding:3px 10px;font-weight:600}
+.online-label{font-size:11px;color:#888}
+.chat-wrap{display:flex;flex-direction:column;height:calc(100vh - 220px);min-height:280px}
+.chat-messages{flex:1;overflow-y:auto;background:#fff;border-radius:12px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,.07);margin-bottom:10px}
+.chat-msg{margin-bottom:10px}
+.chat-msg-header{font-size:11px;color:#aaa;margin-bottom:2px}
+.chat-msg-header b{color:#555;font-weight:600}
+.chat-bubble{display:inline-block;background:#f0faf5;border-radius:10px;padding:7px 12px;font-size:13px;max-width:85%}
+.chat-bubble.mine{background:#1a7a4a;color:#fff}
+.chat-mine .chat-msg-header{text-align:right}
+.chat-mine{text-align:right}
+.chat-input-row{display:flex;gap:8px}
+.chat-input-row input{flex:1;padding:10px 12px;font-size:14px;border-radius:10px;border:1px solid #ddd;background:#fff;font-family:inherit}
+.chat-send{background:#1a7a4a;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer}
+.conn-status{font-size:11px;padding:4px 10px;border-radius:20px;margin-left:8px}
+.conn-ok{background:#f0faf5;color:#1a7a4a}
+.conn-no{background:#fef2f2;color:#e53e3e}
+.dm-list-item{background:#fff;border-radius:12px;padding:11px 14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);display:flex;align-items:center;gap:10px;cursor:pointer}
+.dm-list-item:active{background:#f5f5f0}
+.dm-avatar{width:38px;height:38px;border-radius:50%;background:#f0faf5;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#1a7a4a;flex-shrink:0}
+.dm-info{flex:1}
+.dm-name{font-size:14px;font-weight:600}
+.dm-preview{font-size:11px;color:#aaa;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+.dm-unread{background:#1a7a4a;color:#fff;border-radius:20px;font-size:11px;font-weight:700;padding:2px 7px;min-width:20px;text-align:center}
+.dm-back{background:transparent;border:none;color:#1a7a4a;font-size:14px;font-weight:700;cursor:pointer;padding:0;margin-right:8px}
+.dm-header{display:flex;align-items:center;padding:10px 0 6px}
+.dm-title{font-size:15px;font-weight:700;flex:1}
+
+.po-card{background:#fff;border-radius:14px;padding:14px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-left:4px solid #d97706}
+.po-card.status-ready{border-left-color:#1a7a4a}
+.po-card.status-completed{border-left-color:#aaa;opacity:.7}
+.po-card.status-cancelled{border-left-color:#e53e3e;opacity:.6}
+.po-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px}
+.po-name{font-size:15px;font-weight:700}
+.po-time{font-size:11px;color:#aaa;margin-top:2px}
+.po-badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px}
+.po-pending{background:#fef3c7;color:#92400e}
+.po-ready{background:#f0faf5;color:#1a7a4a}
+.po-completed{background:#f3f4f6;color:#555}
+.po-cancelled{background:#fef2f2;color:#e53e3e}
+.po-items{margin-bottom:8px;font-size:13px;color:#444}
+.po-total{font-size:14px;font-weight:700;color:#1a7a4a;margin-bottom:10px}
+.po-actions{display:flex;gap:7px;flex-wrap:wrap}
+.f-btn{padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #ddd;background:#fff;color:#888}
+.f-btn.active{background:#1a7a4a;color:#fff;border-color:#1a7a4a}
+.po-empty{text-align:center;padding:40px 20px;color:#aaa;font-size:13px}
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none}
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="auth-box">
+    <div class="auth-logo">Slice</div>
+    <div class="auth-sub">Staff login</div>
+    <div class="auth-label">Username</div>
+    <input class="auth-input" type="text" id="login-user" placeholder="Enter username" autocomplete="off"/>
+    <div class="auth-label">Password</div>
+    <input class="auth-input" type="password" id="login-pass" placeholder="Enter password" onkeydown="if(event.key==='Enter')doLogin()"/>
+    <div class="auth-err" id="login-err"></div>
+    <button class="auth-btn" onclick="doLogin()">Login</button>
+  </div>
+</div>
+
+<div class="header">
+  <div style="display:flex;align-items:center;gap:8px">
+    <h1>Slice</h1>
+    <span class="conn-status conn-no" id="conn-status">●  offline</span>
+  </div>
+  <div class="header-right">
+    <span class="logged-as" id="logged-as"></span>
+    <button class="logout-btn" onclick="logout()">Logout</button>
+    <button class="reset-btn" id="reset-btn" style="display:none" onclick="if(confirm('Reset all sales?'))resetAll()">Reset</button>
+  </div>
+</div>
+
+<div class="nav">
+  <button class="nav-btn active" onclick="showPage('kassa',this)">🛒 Kassa</button>
+  <button class="nav-btn" id="nav-stock" onclick="showPage('stock',this)" style="display:none">📦 Stock</button>
+  <button class="nav-btn" id="nav-stats" onclick="showPage('analytics',this)" style="display:none">📊 Stats</button>
+  <button class="nav-btn" id="nav-staff" onclick="showPage('staff',this)" style="display:none">👤 Staff</button>
+  <button class="nav-btn" id="nav-users" onclick="showPage('users',this)" style="display:none">👥 Users</button>
+  <button class="nav-btn" onclick="showPage('chat',this)">💬 Chat</button>
+  <button class="nav-btn" onclick="showPage('dm',this)">✉️ DM</button>
+  <button class="nav-btn" onclick="showPage('log',this)">📋 Log</button>
+  <button class="nav-btn" id="nav-orders" onclick="showPage('orders',this)">🔔 Orders<span id="po-badge" style="display:none;background:#e53e3e;color:#fff;border-radius:20px;font-size:9px;font-weight:800;padding:0 4px;margin-left:2px;vertical-align:top">0</span></button>
+</div>
+
+<div id="page-kassa" class="page active">
+  <div class="section-title">Tap product to add</div>
+  <div class="checkout-grid" id="checkout-grid"></div>
+  <div class="section-title">Basket</div>
+  <div class="basket" id="basket-items"><div class="empty-basket">Nothing added yet</div></div>
+  <div class="total-row"><span class="total-label">Total</span><span class="total-val" id="basket-total">0 sum</span></div>
+  <button class="btn-checkout" id="btn-checkout" onclick="checkout()" disabled>Confirm Sale</button>
+</div>
+
+<div id="page-stock" class="page">
+  <div class="stats" id="stock-stats">
+    <div class="stat"><div class="stat-label">Revenue</div><div class="stat-val" id="s-rev">0</div></div>
+    <div class="stat"><div class="stat-label">Cost</div><div class="stat-val" id="s-cost">0</div></div>
+    <div class="stat"><div class="stat-label">Profit</div><div class="stat-val profit" id="s-profit">0</div></div>
+  </div>
+  <div class="section-title">Products</div>
+  <div id="product-list"></div>
+  <div id="add-product-form">
+    <div class="section-title">Add new product</div>
+    <div class="add-form">
+      <div class="row3">
+        <input type="text" id="in-name" placeholder="Name"/>
+        <input type="number" id="in-cost" placeholder="Cost"/>
+        <input type="number" id="in-price" placeholder="Price"/>
+      </div>
+      <div class="row2">
+        <input type="number" id="in-stock" placeholder="Stock qty"/>
+        <button onclick="addProduct()" style="background:#1a7a4a;color:#fff;border-color:#1a7a4a">+ Add</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="page-analytics" class="page">
+  <div class="section-title">Most profitable</div>
+  <div id="analytics-content"></div>
+</div>
+
+<div id="page-staff" class="page">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px">
+    <div class="section-title" style="margin:0">Staff performance</div>
+    <button class="btn-red" id="reset-staff-btn" style="display:none;font-size:12px;padding:5px 10px" onclick="if(confirm('Reset all staff stats?'))resetStaff()">🗑 Reset stats</button>
+  </div>
+  <div id="staff-content" style="margin-top:8px"></div>
+  <div class="section-title" style="margin-top:16px">Recent sales by staff</div>
+  <div class="log-box" id="staff-log"></div>
+</div>
+
+<div id="page-dm" class="page">
+  <div id="dm-list-view">
+    <div class="section-title">Direct Messages</div>
+    <div id="dm-user-list"></div>
+  </div>
+  <div id="dm-chat-view" style="display:none">
+    <div class="dm-header">
+      <button class="dm-back" onclick="closeDM()">← Back</button>
+      <div class="dm-title" id="dm-chat-title"></div>
+      <button class="btn-red" style="font-size:12px;padding:5px 10px" onclick="if(confirm('Delete this conversation?'))clearDM()">🗑</button>
+    </div>
+    <div class="chat-wrap">
+      <div class="chat-messages" id="dm-messages"></div>
+      <div class="chat-input-row">
+        <input type="text" id="dm-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendDM()"/>
+        <button class="chat-send" onclick="sendDM()">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="page-users" class="page">
+  <div class="section-title">Manage users</div>
+  <div id="users-list"></div>
+  <div class="section-title">Add new user</div>
+  <div class="add-form">
+    <div class="row2">
+      <input type="text" id="new-username" placeholder="Username"/>
+      <input type="text" id="new-password" placeholder="Password"/>
+    </div>
+    <div class="row2">
+      <select id="new-role" style="padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-family:inherit;width:100%">
+        <option value="cashier">Cashier</option>
+        <option value="admin">Admin</option>
+      </select>
+      <button onclick="addUser()" style="background:#1a7a4a;color:#fff;border-color:#1a7a4a">+ Add</button>
+    </div>
+  </div>
+</div>
+
+<div id="page-chat" class="page">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px">
+    <div class="section-title" style="margin:0">Online now</div>
+    <button class="btn-red" id="clear-chat-btn" style="display:none;font-size:12px;padding:5px 10px" onclick="if(confirm('Delete all chat messages?'))clearChat()">🗑 Clear chat</button>
+  </div>
+  <div class="online-bar" id="online-bar" style="margin-top:8px"><span class="online-label">Connecting...</span></div>
+  <div class="section-title">Team chat</div>
+  <div class="chat-wrap">
+    <div class="chat-messages" id="chat-messages"><div style="color:#aaa;font-size:13px;text-align:center;padding:20px">No messages yet</div></div>
+    <div class="chat-input-row">
+      <input type="text" id="chat-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendChat()"/>
+      <button class="chat-send" onclick="sendChat()">Send</button>
+    </div>
+  </div>
+</div>
+
+<div id="page-log" class="page">
+  <div class="section-title">Sales log</div>
+  <div class="log-box" id="log-content"></div>
+</div>
+
+
+<div id="page-orders" class="page">
+  <div class="stats" style="margin-top:4px">
+    <div class="stat"><div class="stat-label">⏳ Pending</div><div class="stat-val" id="po-pending" style="color:#d97706">0</div></div>
+    <div class="stat"><div class="stat-label">✅ Ready</div><div class="stat-val profit" id="po-ready-count">0</div></div>
+    <div class="stat"><div class="stat-label">Today</div><div class="stat-val" id="po-today">0</div></div>
+  </div>
+  <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+    <button class="f-btn active" id="f-pending" onclick="setFilter('pending',this)">⏳ Pending</button>
+    <button class="f-btn" id="f-ready" onclick="setFilter('ready',this)">✅ Ready</button>
+    <button class="f-btn" id="f-all" onclick="setFilter('all',this)">All</button>
+  </div>
+  <div id="orders-list"><div class="po-empty">Loading...</div></div>
+</div>
+
+<script>
+// ── FIREBASE CONFIG ──
+const firebaseConfig = {
+  apiKey: "AIzaSyBqPOz1MB4do4Uh3dLVD1zZwsAid0k0dAE",
+  authDomain: "slice-fe4b4.firebaseapp.com",
+  databaseURL: "https://slice-fe4b4-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "slice-fe4b4",
+  storageBucket: "slice-fe4b4.firebasestorage.app",
+  messagingSenderId: "761897388253",
+  appId: "1:761897388253:web:4423dc375f0aedd3aaf334",
+  measurementId: "G-7HQFRXKC4X"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ── ACCOUNTS (Firebase) ──
+const DEFAULT_ACCOUNTS = [
+  {user:"admin",    pass:"slice2024", role:"admin",   active:true},
+  {user:"axror",    pass:"123",       role:"cashier", active:true},
+  {user:"cashier1", pass:"cash01",    role:"cashier", active:true},
+  {user:"cashier2", pass:"cash02",    role:"cashier", active:true},
+  {user:"cashier3", pass:"cash03",    role:"cashier", active:false},
+];
+let accounts = [];
+
+const DEFAULT_PRODUCTS = [
+  {id:1,name:"Sandwich",   cost:5000, price:12000,stock:50, sold:0,revenue:0,profit:0},
+  {id:2,name:"Ramen cup",  cost:3500, price:8000, stock:30, sold:0,revenue:0,profit:0},
+  {id:3,name:"Hot coffee", cost:1500, price:5000, stock:60, sold:0,revenue:0,profit:0},
+  {id:4,name:"Hot choco",  cost:2000, price:6000, stock:40, sold:0,revenue:0,profit:0},
+  {id:5,name:"Water/juice",cost:1500, price:4000, stock:50, sold:0,revenue:0,profit:0},
+  {id:6,name:"Sweets",     cost:500,  price:2000, stock:100,sold:0,revenue:0,profit:0},
+];
+
+let products = [];
+let saleLog  = [];
+let staffLog = [];
+let nextId   = 7;
+let basket   = {};
+let currentUser = "";
+let currentRole = "";
+let onlineRef   = null;
+let presenceTimer = null;
+
+// ── CONNECTION STATUS ──
+db.ref('.info/connected').on('value', snap => {
+  const el = document.getElementById('conn-status');
+  if(snap.val()){
+    el.textContent = '● online';
+    el.className = 'conn-status conn-ok';
+  } else {
+    el.textContent = '● offline';
+    el.className = 'conn-status conn-no';
+  }
+});
+
+// ── BOOT ──
+window.addEventListener('DOMContentLoaded', () => {
+  db.ref('accounts').once('value', snap => {
+    const val = snap.val();
+    if(val){
+      accounts = Object.values(val);
+    } else {
+      accounts = JSON.parse(JSON.stringify(DEFAULT_ACCOUNTS));
+      db.ref('accounts').set(Object.fromEntries(accounts.map(a=>[a.user, a])));
+    }
+    // Live updates
+    db.ref('accounts').on('value', s => {
+      const v = s.val();
+      accounts = v ? Object.values(v) : [];
+      renderUsers();
+    });
+    const u = sessionStorage.getItem('slice_user');
+    const r = sessionStorage.getItem('slice_role');
+    if(u && r && accounts.find(a=>a.user===u&&a.active)){
+      currentUser=u; currentRole=r;
+      showApp();
+    } else {
+      document.getElementById('login-screen').classList.remove('hidden');
+    }
+  });
+});
+
+// ── LOGIN ──
+function doLogin(){
+  const u = document.getElementById('login-user').value.trim().toLowerCase();
+  const p = document.getElementById('login-pass').value;
+  const match = accounts.find(a=>a.user===u&&a.pass===p);
+  if(!match){ document.getElementById('login-err').textContent='Wrong username or password'; document.getElementById('login-pass').value=''; return; }
+  if(!match.active){ document.getElementById('login-err').textContent='Account disabled. Contact admin.'; return; }
+  currentUser=match.user; currentRole=match.role;
+  sessionStorage.setItem('slice_user',currentUser);
+  sessionStorage.setItem('slice_role',currentRole);
+  document.getElementById('login-err').textContent='';
+  showApp();
+}
+
+function showApp(){
+  document.getElementById('login-screen').classList.add('hidden');
+  applyRole();
+  setupPresence();
+  listenToFirebase();
+  listenToChat();
+  listenPreOrders();
+}
+
+function logout(){
+  if(!confirm('Log out?'))return;
+  if(onlineRef)onlineRef.remove();
+  clearInterval(presenceTimer);
+  sessionStorage.clear();
+  currentUser='';currentRole='';basket={};
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('login-user').value='';
+  document.getElementById('login-pass').value='';
+}
+
+function applyRole(){
+  const isAdmin=currentRole==='admin';
+  document.getElementById('logged-as').textContent=currentUser+(isAdmin?' ★':'');
+  document.getElementById('nav-stock').style.display='';
+  document.getElementById('nav-stats').style.display=isAdmin?'':'none';
+  document.getElementById('nav-staff').style.display=isAdmin?'':'none';
+  document.getElementById('nav-users').style.display=isAdmin?'':'none';
+  document.getElementById('reset-btn').style.display=isAdmin?'':'none';
+  document.getElementById('reset-staff-btn').style.display=isAdmin?'':'none';
+  document.getElementById('clear-chat-btn').style.display=isAdmin?'':'none';
+  document.getElementById('stock-stats').style.display=isAdmin?'':'none';
+  document.getElementById('add-product-form').style.display=isAdmin?'':'none';
+}
+
+// ── PRESENCE ──
+function setupPresence(){
+  onlineRef = db.ref('online/'+currentUser);
+  onlineRef.set({user:currentUser,role:currentRole,at:Date.now()});
+  onlineRef.onDisconnect().remove();
+  presenceTimer = setInterval(()=>onlineRef.update({at:Date.now()}),30000);
+  db.ref('online').on('value',snap=>{
+    const val=snap.val()||{};
+    const users=Object.values(val);
+    const bar=document.getElementById('online-bar');
+    if(!bar)return;
+    bar.innerHTML=users.length
+      ?'<span class="online-label">Online:</span> '+users.map(u=>`<span class="online-chip"><span class="online-dot"></span>${u.user}${u.role==='admin'?' ★':''}</span>`).join('')
+      :'<span class="online-label">No one online</span>';
+  });
+}
+
+// ── FIREBASE LISTENERS ──
+function listenToFirebase(){
+  db.ref('products').on('value',snap=>{
+    const val=snap.val();
+    if(val){
+      products=Object.values(val);
+      products.forEach(p=>{if(!p.revenue)p.revenue=0;if(!p.profit)p.profit=0;});
+      nextId=Math.max(...products.map(x=>x.id),nextId)+1;
+    } else {
+      products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
+      db.ref('products').set(Object.fromEntries(products.map(p=>[p.id,p])));
+    }
+    renderKassa();renderStock();renderAnalytics();
+  });
+  db.ref('salelog').on('value',snap=>{
+    const val=snap.val();
+    saleLog=val?Object.values(val).sort((a,b)=>a.ts-b.ts):[];
+    renderLog();
+  });
+  db.ref('stafflog').on('value',snap=>{
+    const val=snap.val();
+    staffLog=val?Object.values(val).sort((a,b)=>b.ts-a.ts):[];
+    renderStaff();
+  });
+}
+
+function listenToChat(){
+  db.ref('chat').limitToLast(60).on('value',snap=>{
+    const val=snap.val();
+    const msgs=val?Object.values(val).sort((a,b)=>a.ts-b.ts):[];
+    const el=document.getElementById('chat-messages');
+    if(!el)return;
+    el.innerHTML=msgs.length?msgs.map(m=>{
+      const mine=m.user===currentUser;
+      return `<div class="chat-msg ${mine?'chat-mine':''}">
+        <div class="chat-msg-header"><b>${m.user}</b> ${m.time}</div>
+        <div class="chat-bubble ${mine?'mine':''}">${esc(m.text)}</div>
+      </div>`;
+    }).join(''):'<div style="color:#aaa;font-size:13px;text-align:center;padding:20px">No messages yet</div>';
+    el.scrollTop=el.scrollHeight;
+  });
+}
+
+function sendChat(){
+  const input=document.getElementById('chat-input');
+  const text=input.value.trim();
+  if(!text)return;
+  db.ref('chat').push({user:currentUser,text,time:now(),ts:Date.now()});
+  input.value='';
+}
+
+function esc(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// ── KASSA ──
+function renderKassa(){
+  const grid=document.getElementById('checkout-grid');
+  if(!grid)return;
+  grid.innerHTML=products.map(p=>{
+    const rem=p.stock-p.sold;
+    const sel=basket[p.id]?'selected':'';
+    const dis=rem<=0?'disabled-item':'';
+    const sc=rem<=0?'out':rem<=5?'low':'';
+    const st=rem<=0?'Out of stock':'📦 '+rem+' left';
+    return `<div class="c-item ${sel} ${dis}" onclick="${rem>0?'toggleBasket('+p.id+')':''}">
+      <div class="c-item-name">${p.name}</div>
+      <div class="c-item-price">${fmt(p.price)} sum</div>
+      <div class="c-item-stock ${sc}">${st}</div>
+    </div>`;
+  }).join('');
+  renderBasket();
+}
+
+function toggleBasket(id){
+  const p=products.find(x=>x.id===id);
+  if(!p||p.stock-p.sold<=0)return;
+  if(basket[id])delete basket[id];
+  else basket[id]={qty:1,price:p.price};
+  renderKassa();
+}
+
+function renderBasket(){
+  const keys=Object.keys(basket);
+  const el=document.getElementById('basket-items');
+  if(!el)return;
+  if(!keys.length){
+    el.innerHTML='<div class="empty-basket">Tap products above to add</div>';
+    document.getElementById('basket-total').textContent='0 sum';
+    document.getElementById('btn-checkout').disabled=true;
+    return;
+  }
+  let total=0;
+  el.innerHTML=keys.map(id=>{
+    const p=products.find(x=>x.id==id);
+    const b=basket[id];
+    total+=b.qty*b.price;
+    return `<div class="basket-row">
+      <div class="b-name">${p.name}</div>
+      <div class="b-qty">
+        <button onclick="changeQty(${id},-1)">−</button>
+        <span style="font-size:14px;font-weight:600;min-width:18px;text-align:center">${b.qty}</span>
+        <button onclick="changeQty(${id},1)">+</button>
+      </div>
+      <input class="b-price-input" type="number" value="${b.price}" onchange="changePrice(${id},this.value)"/>
+    </div>`;
+  }).join('');
+  document.getElementById('basket-total').textContent=fmt(total)+' sum';
+  document.getElementById('btn-checkout').disabled=false;
+}
+
+function changeQty(id,delta){
+  if(!basket[id])return;
+  const p=products.find(x=>x.id==id);
+  const nq=basket[id].qty+delta;
+  if(nq<=0)delete basket[id];
+  else if(nq>p.stock-p.sold)return;
+  else basket[id].qty=nq;
+  renderKassa();
+}
+
+function changePrice(id,val){if(basket[id])basket[id].price=parseInt(val)||0;renderBasket();}
+
+function checkout(){
+  const keys=Object.keys(basket);
+  if(!keys.length)return;
+  let summary=[];
+  let totalRevenue=0;
+  let items=[];
+  keys.forEach(id=>{
+    const p=products.find(x=>x.id==id);
+    const b=basket[id];
+    p.sold+=b.qty;
+    p.revenue=(p.revenue||0)+b.qty*b.price;
+    p.profit=(p.profit||0)+b.qty*(b.price-p.cost);
+    db.ref('products/'+p.id).set(p);
+    summary.push(`${b.qty}x ${p.name} @${fmt(b.price)}`);
+    totalRevenue+=b.qty*b.price;
+    items.push({name:p.name,qty:b.qty,price:b.price});
+  });
+  db.ref('salelog').push({time:now(),msg:currentUser+': '+summary.join(', '),ts:Date.now()});
+  db.ref('stafflog').push({
+    cashier:currentUser,
+    time:now(),
+    ts:Date.now(),
+    total:totalRevenue,
+    items:items,
+    msg:summary.join(', ')
+  });
+  basket={};
+  renderKassa();
+}
+
+// ── STOCK ──
+function renderStock(){
+  const list=document.getElementById('product-list');
+  if(!list)return;
+  const isAdmin=currentRole==='admin';
+  list.innerHTML=products.map(p=>{
+    const rem=p.stock-p.sold;
+    return `<div class="item" id="item-${p.id}">
+      <div class="item-top">
+        <div class="item-info">
+          <div class="item-name">${p.name}</div>
+          <div class="item-meta">${isAdmin?`cost ${fmt(p.cost)} · price ${fmt(p.price)} · margin ${fmt(p.price-p.cost)}`:`price ${fmt(p.price)} sum`}</div>
+        </div>
+        <div class="item-right">
+          <span class="stock ${rem<=0?'out':rem<=5?'low':''}">${rem<=0?'OUT':'📦'+rem}</span>
+          ${isAdmin?`<button class="btn-red" onclick="deleteProduct(${p.id})">✕</button>
+          <button class="btn-green" onclick="showRestock(${p.id})">+📦</button>`:''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  let rev=0,cost=0;
+  products.forEach(p=>{rev+=(p.revenue||0);cost+=p.sold*p.cost;});
+  document.getElementById('s-rev').textContent=fmt(rev);
+  document.getElementById('s-cost').textContent=fmt(cost);
+  document.getElementById('s-profit').textContent=fmt(rev-cost);
+}
+
+function showRestock(id){
+  const existing=document.getElementById('rb-'+id);
+  if(existing){existing.remove();return;}
+  const box=document.createElement('div');
+  box.className='restock-box';box.id='rb-'+id;
+  box.innerHTML=`<input type="number" id="rq-${id}" placeholder="how many to add"/><button class="btn-green" onclick="confirmRestock(${id})">Add stock</button>`;
+  document.getElementById('item-'+id).appendChild(box);
+  document.getElementById('rq-'+id).focus();
+}
+
+function confirmRestock(id){
+  const p=products.find(x=>x.id===id);
+  const qty=parseInt(document.getElementById('rq-'+id).value);
+  if(!qty||qty<=0)return;
+  p.stock+=qty;
+  db.ref('products/'+id).set(p);
+  db.ref('salelog').push({time:now(),msg:`${currentUser} restocked ${p.name} +${qty}`,ts:Date.now()});
+}
+
+function addProduct(){
+  const name=document.getElementById('in-name').value.trim();
+  const cost=parseInt(document.getElementById('in-cost').value)||0;
+  const price=parseInt(document.getElementById('in-price').value)||0;
+  const stock=parseInt(document.getElementById('in-stock').value)||10;
+  if(!name||!price)return;
+  const np={id:nextId++,name,cost,price,stock,sold:0,revenue:0,profit:0};
+  db.ref('products/'+np.id).set(np);
+  ['in-name','in-cost','in-price','in-stock'].forEach(i=>document.getElementById(i).value='');
+}
+
+function deleteProduct(id){
+  if(confirm('Delete this product?'))db.ref('products/'+id).remove();
+}
+
+// ── ANALYTICS ──
+function renderAnalytics(){
+  const el=document.getElementById('analytics-content');
+  if(!el)return;
+  const hasSales=products.some(p=>p.sold>0);
+  if(!hasSales){el.innerHTML='<div class="log-box" style="font-size:13px;color:#aaa">No sales yet</div>';return;}
+  const sorted=[...products].filter(p=>p.sold>0).sort((a,b)=>(b.profit||0)-(a.profit||0));
+  const maxP=sorted[0].profit||1;
+  const medals=[['b-gold','🥇'],['b-silver','🥈'],['b-bronze','🥉']];
+  el.innerHTML='<div class="analytic-card">'+sorted.map((p,i)=>{
+    const pct=Math.round(((p.profit||0)/maxP)*100);
+    const med=i<3?`<span class="badge ${medals[i][0]}">${medals[i][1]}</span>`:'';
+    return `<div class="a-row"><div class="a-left">
+      <div style="display:flex;align-items:center"><span class="a-name">${p.name}</span>${med}</div>
+      <div class="a-detail">sold ${p.sold} · revenue ${fmt(p.revenue||0)} sum</div>
+      <div class="bar-wrap"><div class="bar" style="width:${pct}%"></div></div>
+    </div><div class="a-profit">${fmt(p.profit||0)}</div></div>`;
+  }).join('')+'</div>';
+}
+
+// ── USERS ──
+function renderUsers(){
+  const el=document.getElementById('users-list');
+  if(!el)return;
+  el.innerHTML=accounts.map((a)=>{
+    const isMe=a.user===currentUser;
+    return `<div class="user-card">
+      <div class="user-avatar">${a.user.substring(0,2).toUpperCase()}</div>
+      <div class="user-info">
+        <div class="user-name">${a.user}${isMe?' (you)':''}</div>
+        <div class="user-role">${a.role} · pass: ${a.pass}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+        <span class="user-status ${a.active?'status-active':'status-disabled'}">${a.active?'Active':'Disabled'}</span>
+        ${!isMe?`<div style="display:flex;gap:6px">
+          <button class="${a.active?'btn-red':'btn-green'}" onclick="toggleUser('${a.user}')">${a.active?'Disable':'Enable'}</button>
+          <button class="btn-red" onclick="removeUser('${a.user}')">✕</button>
+        </div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleUser(username){
+  const a=accounts.find(x=>x.user===username);
+  if(!a)return;
+  a.active=!a.active;
+  db.ref('accounts/'+username).set(a);
+}
+
+function removeUser(username){
+  if(username===currentUser)return;
+  if(confirm(`Remove "${username}"?`)){
+    db.ref('accounts/'+username).remove();
+  }
+}
+
+function addUser(){
+  const user=document.getElementById('new-username').value.trim().toLowerCase();
+  const pass=document.getElementById('new-password').value.trim();
+  const role=document.getElementById('new-role').value;
+  if(!user||!pass){alert('Enter username and password');return;}
+  if(accounts.find(a=>a.user===user)){alert('Username already exists');return;}
+  const newAcc={user,pass,role,active:true};
+  db.ref('accounts/'+user).set(newAcc);
+  document.getElementById('new-username').value='';
+  document.getElementById('new-password').value='';
+}
+
+// ── LOG ──
+function renderLog(){
+  const el=document.getElementById('log-content');
+  if(!el)return;
+  const items=saleLog.slice().reverse().slice(0,40);
+  el.innerHTML=items.length?items.map(l=>`<div class="log-item"><span class="log-time">${l.time}</span>${l.msg}</div>`).join(''):'<div style="font-size:13px;color:#aaa;padding:4px 0">No activity yet</div>';
+}
+
+function resetAll(){
+  if(currentRole!=='admin')return;
+  products.forEach(p=>{p.sold=0;p.revenue=0;p.profit=0;db.ref('products/'+p.id).set(p);});
+  db.ref('salelog').remove();
+}
+
+// ── STAFF STATS ──
+function renderStaff(){
+  const el=document.getElementById('staff-content');
+  const logEl=document.getElementById('staff-log');
+  if(!el)return;
+
+  // Build per-cashier stats
+  const stats={};
+  staffLog.forEach(s=>{
+    if(!stats[s.cashier])stats[s.cashier]={name:s.cashier,sales:0,revenue:0,items:{}};
+    stats[s.cashier].sales++;
+    stats[s.cashier].revenue+=(s.total||0);
+    (s.items||[]).forEach(it=>{
+      if(!stats[s.cashier].items[it.name])stats[s.cashier].items[it.name]=0;
+      stats[s.cashier].items[it.name]+=it.qty;
+    });
+  });
+
+  const cashiers=Object.values(stats).sort((a,b)=>b.revenue-a.revenue);
+  if(!cashiers.length){
+    el.innerHTML='<div class="log-box" style="font-size:13px;color:#aaa">No sales recorded yet</div>';
+    if(logEl)logEl.innerHTML='<div style="font-size:13px;color:#aaa;padding:4px 0">No activity yet</div>';
+    return;
+  }
+
+  const maxRev=cashiers[0].revenue||1;
+  el.innerHTML='<div class="analytic-card">'+cashiers.map((c,i)=>{
+    const pct=Math.round((c.revenue/maxRev)*100);
+    const medals=['🥇','🥈','🥉'];
+    const med=i<3?medals[i]:'';
+    const topItems=Object.entries(c.items).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([n,q])=>`${n}×${q}`).join(', ');
+    return `<div class="a-row">
+      <div class="a-left">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="a-name">${med} ${c.name}</span>
+          <span style="font-size:11px;background:#f0faf5;color:#1a7a4a;border-radius:20px;padding:2px 8px;font-weight:600">${c.sales} sales</span>
+        </div>
+        <div class="a-detail">Top: ${topItems||'—'}</div>
+        <div class="bar-wrap"><div class="bar" style="width:${pct}%"></div></div>
+      </div>
+      <div class="a-profit">${fmt(c.revenue)}</div>
+    </div>`;
+  }).join('')+'</div>';
+
+  // Recent sales log per staff
+  if(logEl){
+    logEl.innerHTML=staffLog.slice(0,30).map(s=>
+      `<div class="log-item"><span class="log-time">${s.time}</span><b>${s.cashier}</b>: ${s.msg} — <span style="color:#1a7a4a;font-weight:600">${fmt(s.total)} sum</span></div>`
+    ).join('');
+  }
+}
+
+function resetStaff(){
+  if(currentRole!=='admin')return;
+  db.ref('stafflog').remove();
+}
+
+function clearChat(){
+  if(currentRole!=='admin')return;
+  db.ref('chat').remove();
+}
+
+function clearDM(){
+  if(!dmPartner)return;
+  const key=dmKey(currentUser,dmPartner);
+  db.ref('dm/'+key).remove();
+}
+
+// ── DM ──
+let dmPartner = null;
+let dmUnsub = null;
+
+function showPage(name,btn){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  btn.classList.add('active');
+  if(name==='dm') renderDMList();
+}
+
+function renderDMList(){
+  const el=document.getElementById('dm-user-list');
+  if(!el)return;
+  const others=accounts.filter(a=>a.user!==currentUser&&a.active);
+  if(!others.length){el.innerHTML='<div style="font-size:13px;color:#aaa;padding:12px 0">No other users yet</div>';return;}
+  el.innerHTML=others.map(a=>{
+    const key=dmKey(currentUser,a.user);
+    return `<div class="dm-list-item" onclick="openDM('${a.user}')">
+      <div class="dm-avatar">${a.user.substring(0,2).toUpperCase()}</div>
+      <div class="dm-info">
+        <div class="dm-name">${a.user} <span style="font-size:10px;color:#aaa">${a.role}</span></div>
+        <div class="dm-preview" id="dm-preview-${a.user}">Tap to chat</div>
+      </div>
+      <span class="dm-unread" id="dm-unread-${a.user}" style="display:none">0</span>
+    </div>`;
+  }).join('');
+  // Load previews
+  others.forEach(a=>{
+    const key=dmKey(currentUser,a.user);
+    db.ref('dm/'+key).limitToLast(1).once('value',snap=>{
+      const val=snap.val();
+      if(val){
+        const msg=Object.values(val)[0];
+        const prev=document.getElementById('dm-preview-'+a.user);
+        if(prev)prev.textContent=(msg.from===currentUser?'You: ':'')+msg.text;
+      }
+    });
+  });
+}
+
+function dmKey(a,b){return [a,b].sort().join('__');}
+
+function openDM(partner){
+  dmPartner=partner;
+  document.getElementById('dm-list-view').style.display='none';
+  document.getElementById('dm-chat-view').style.display='block';
+  document.getElementById('dm-chat-title').textContent='✉️ '+partner;
+  const el=document.getElementById('dm-messages');
+  el.innerHTML='';
+  const key=dmKey(currentUser,partner);
+  if(dmUnsub)dmUnsub();
+  dmUnsub=db.ref('dm/'+key).limitToLast(80).on('value',snap=>{
+    const val=snap.val();
+    const msgs=val?Object.values(val).sort((a,b)=>a.ts-b.ts):[];
+    el.innerHTML=msgs.length?msgs.map(m=>{
+      const mine=m.from===currentUser;
+      return `<div class="chat-msg ${mine?'chat-mine':''}">
+        <div class="chat-msg-header"><b>${m.from}</b> ${m.time}</div>
+        <div class="chat-bubble ${mine?'mine':''}">${esc(m.text)}</div>
+      </div>`;
+    }).join(''):'<div style="color:#aaa;font-size:13px;text-align:center;padding:20px">No messages yet</div>';
+    el.scrollTop=el.scrollHeight;
+  });
+  document.getElementById('dm-input').focus();
+}
+
+function closeDM(){
+  if(dmUnsub){db.ref('dm/'+dmKey(currentUser,dmPartner)).off('value',dmUnsub);dmUnsub=null;}
+  dmPartner=null;
+  document.getElementById('dm-list-view').style.display='block';
+  document.getElementById('dm-chat-view').style.display='none';
+  renderDMList();
+}
+
+function sendDM(){
+  const input=document.getElementById('dm-input');
+  const text=input.value.trim();
+  if(!text||!dmPartner)return;
+  const key=dmKey(currentUser,dmPartner);
+  db.ref('dm/'+key).push({from:currentUser,to:dmPartner,text,time:now(),ts:Date.now()});
+  input.value='';
+}
+
+
+// ── PREORDERS ──
+let preOrders = {};
+let poFilter = 'pending';
+
+function listenPreOrders(){
+  db.ref('preorders').on('value', snap => {
+    preOrders = snap.val() || {};
+    renderOrders();
+    updatePoBadge();
+  });
+}
+
+function updatePoBadge(){
+  const n = Object.values(preOrders).filter(o=>o.status==='pending').length;
+  const b = document.getElementById('po-badge');
+  if(!b)return;
+  if(n>0){b.textContent=n;b.style.display='inline';}
+  else b.style.display='none';
+}
+
+function setFilter(f,btn){
+  poFilter=f;
+  document.querySelectorAll('.f-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderOrders();
+}
+
+function renderOrders(){
+  const today=new Date().toISOString().slice(0,10);
+  const all=Object.entries(preOrders).map(([k,v])=>({...v,_key:k}));
+  const pending=all.filter(o=>o.status==='pending');
+  const ready=all.filter(o=>o.status==='ready');
+  const todayAll=all.filter(o=>o.date===today);
+  const pd=document.getElementById('po-pending');
+  const rd=document.getElementById('po-ready-count');
+  const td=document.getElementById('po-today');
+  if(pd)pd.textContent=pending.length;
+  if(rd)rd.textContent=ready.length;
+  if(td)td.textContent=todayAll.length;
+
+  let filtered = poFilter==='pending'?pending:poFilter==='ready'?ready:all;
+  filtered = [...filtered].sort((a,b)=>(b.ts||0)-(a.ts||0));
+
+  const el=document.getElementById('orders-list');
+  if(!el)return;
+  if(!filtered.length){
+    el.innerHTML=`<div class="po-empty">${poFilter==='pending'?'🎉 Нет ожидающих заказов!':'Нет заказов.'}</div>`;
+    return;
+  }
+
+  el.innerHTML=filtered.map(o=>{
+    const sc=`status-${o.status||'pending'}`;
+    const bc=`po-${o.status||'pending'}`;
+    const lb={pending:'⏳ Ожидает',ready:'✅ Готов',completed:'🎉 Выдан',cancelled:'❌ Отменён'}[o.status]||o.status;
+    const itemsHtml=(o.items||[]).map(it=>`<div>• ${it.name} × ${it.qty} — ${fmt(it.total||it.price*it.qty)} sum</div>`).join('');
+    const total=(o.items||[]).reduce((s,it)=>s+(it.total||it.price*it.qty||0),0);
+    let actions='';
+    if(o.status==='pending'){
+      actions=`<button class="btn-green" onclick="updateOrder('${o._key}','ready')">✅ Готов</button>
+               <button class="btn-red" onclick="updateOrder('${o._key}','cancelled')">✕ Отмена</button>`;
+    } else if(o.status==='ready'){
+      actions=`<button class="btn-green" onclick="updateOrder('${o._key}','completed')">🎉 Выдан</button>
+               <button class="btn-red" onclick="updateOrder('${o._key}','cancelled')">✕ Отмена</button>`;
+    } else {
+      actions=`<button style="font-size:12px;padding:5px 10px;color:#aaa" onclick="deleteOrder('${o._key}')">🗑 Удалить</button>`;
+    }
+    return `<div class="po-card ${sc}">
+      <div class="po-top">
+        <div><div class="po-name">👤 ${o.customerName||'Unknown'}</div>
+        <div class="po-time">🕐 ${o.date||''} ${o.time||''}${o.telegramUser?' · @'+o.telegramUser:''}</div></div>
+        <span class="po-badge ${bc}">${lb}</span>
+      </div>
+      <div class="po-items">${itemsHtml}</div>
+      <div class="po-total">💳 Итого: ${fmt(total)} sum</div>
+      <div class="po-actions">${actions}</div>
+    </div>`;
+  }).join('');
+}
+
+function updateOrder(key,status){
+  db.ref('preorders/'+key).update({status});
+  const msgs={ready:'✅ Отмечено как Готово!',completed:'🎉 Заказ выдан!',cancelled:'Заказ отменён'};
+  showToast(msgs[status]||'Обновлено');
+}
+
+function deleteOrder(key){
+  if(confirm('Удалить заказ?'))db.ref('preorders/'+key).remove();
+}
+
+function showToast(msg){
+  const ex=document.querySelector('.toast');if(ex)ex.remove();
+  const t=document.createElement('div');t.className='toast';t.textContent=msg;
+  document.body.appendChild(t);setTimeout(()=>t.remove(),2500);
+}
+
+function fmt(n){return Number(Math.round(n)).toLocaleString();}
+function now(){const d=new Date();return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');}
+</script>
+</body>
+</html>
