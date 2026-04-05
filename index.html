@@ -188,6 +188,7 @@ input[type=text],input[type=number]{width:100%;padding:8px 10px;font-size:13px;b
   <button class="nav-btn" onclick="showPage('chat',this)">💬 Chat</button>
   <button class="nav-btn" onclick="showPage('dm',this)">✉️ DM</button>
   <button class="nav-btn" onclick="showPage('log',this)">📋 Log</button>
+  <button class="nav-btn" id="nav-settings" onclick="showPage('settings',this)" style="display:none">⚙️ Sync</button>
   <button class="nav-btn" id="nav-orders" onclick="showPage('orders',this)">🔔 Orders<span id="po-badge" style="display:none;background:#e53e3e;color:#fff;border-radius:20px;font-size:9px;font-weight:800;padding:0 4px;margin-left:2px;vertical-align:top">0</span></button>
 </div>
 
@@ -315,6 +316,32 @@ input[type=text],input[type=number]{width:100%;padding:8px 10px;font-size:13px;b
   <div id="orders-list"><div class="po-empty">Loading...</div></div>
 </div>
 
+<div id="page-settings" class="page">
+  <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.07);margin-bottom:12px">
+    <div style="font-size:14px;font-weight:700;margin-bottom:4px">🔗 Accounting Sync</div>
+    <div style="font-size:12px;color:#888;margin-bottom:12px">Enter your Accounting company ID to automatically sync every sale as an income transaction in Hisobot.</div>
+    <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Accounting Company ID</div>
+    <input type="text" id="acc-link-id" placeholder="e.g. mycafe" style="width:100%;padding:10px 12px;font-size:14px;border-radius:10px;border:1.5px solid #ddd;background:#fafafa;font-family:inherit;margin-bottom:10px"/>
+    <div style="font-size:11px;color:#888;margin-bottom:12px">This is the same ID you use to log in to Hisobot (Accounting app).</div>
+    <button onclick="saveAccLink()" style="width:100%;background:#1a7a4a;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">💾 Save Link</button>
+    <div id="acc-link-status" style="font-size:13px;text-align:center;margin-top:10px;min-height:18px"></div>
+  </div>
+  <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.07);margin-bottom:12px">
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px">📊 Sync Status</div>
+    <div id="sync-status-info" style="font-size:13px;color:#888">Loading...</div>
+  </div>
+  <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
+    <div style="font-size:14px;font-weight:700;margin-bottom:4px">ℹ️ How it works</div>
+    <div style="font-size:12px;color:#888;line-height:1.6">
+      Every time a sale is confirmed in Kassa:<br/>
+      ✅ An <b>Income</b> transaction is created in Accounting under "Sales"<br/>
+      ✅ A <b>Cost of Goods</b> expense is also recorded under "Supplies"<br/>
+      ✅ Both are tagged with <b>source: kassa</b> so you can filter them<br/>
+      ⚠️ Telegram pre-orders are NOT auto-synced (only confirmed sales)
+    </div>
+  </div>
+</div>
+
 <script>
 // ── FIREBASE CONFIG ──
 const firebaseConfig = {
@@ -418,6 +445,7 @@ function showApp(){
   setupPresence();
   listenToFirebase();
   listenToChat();
+  loadAccLink();
   listenPreOrders();
 }
 
@@ -439,6 +467,7 @@ function applyRole(){
   document.getElementById('nav-stats').style.display=isAdmin?'':'none';
   document.getElementById('nav-staff').style.display=isAdmin?'':'none';
   document.getElementById('nav-users').style.display=isAdmin?'':'none';
+  document.getElementById('nav-settings').style.display=isAdmin?'':'none';
   document.getElementById('reset-btn').style.display=isAdmin?'':'none';
   document.getElementById('reset-staff-btn').style.display=isAdmin?'':'none';
   document.getElementById('clear-chat-btn').style.display=isAdmin?'':'none';
@@ -587,9 +616,7 @@ function changePrice(id,val){if(basket[id])basket[id].price=parseInt(val)||0;ren
 function checkout(){
   const keys=Object.keys(basket);
   if(!keys.length)return;
-  let summary=[];
-  let totalRevenue=0;
-  let items=[];
+  let summary=[],totalRevenue=0,totalCost=0,items=[];
   keys.forEach(id=>{
     const p=products.find(x=>x.id==id);
     const b=basket[id];
@@ -599,16 +626,33 @@ function checkout(){
     db.ref('products/'+p.id).set(p);
     summary.push(`${b.qty}x ${p.name} @${fmt(b.price)}`);
     totalRevenue+=b.qty*b.price;
-    items.push({name:p.name,qty:b.qty,price:b.price});
+    totalCost+=b.qty*(p.cost||0);
+    items.push({name:p.name,qty:b.qty,price:b.price,cost:p.cost||0});
   });
-  db.ref('salelog').push({time:now(),msg:currentUser+': '+summary.join(', '),ts:Date.now()});
-  db.ref('stafflog').push({
-    cashier:currentUser,
-    time:now(),
-    ts:Date.now(),
-    total:totalRevenue,
-    items:items,
-    msg:summary.join(', ')
+  const saleTs=Date.now();
+  const saleId=saleTs.toString(36);
+  db.ref('salelog').push({time:now(),msg:currentUser+': '+summary.join(', '),ts:saleTs});
+  db.ref('stafflog').push({cashier:currentUser,time:now(),ts:saleTs,total:totalRevenue,items,msg:summary.join(', '),id:saleId});
+  // SYNC TO ACCOUNTING
+  db.ref('settings/accountingLink').once('value',snap=>{
+    const accId=snap.val();
+    if(accId){
+      const txDate=new Date().toISOString().slice(0,10);
+      db.ref('accounting/'+accId+'/transactions').push({
+        type:'income',date:txDate,desc:'Kassa: '+summary.join(', '),
+        amount:totalRevenue,category:'Sales',method:'cash',
+        reference:'KASSA-'+saleId,notes:'Cashier: '+currentUser,
+        ts:saleTs,createdBy:'kassa',source:'kassa'
+      });
+      if(totalCost>0){
+        db.ref('accounting/'+accId+'/transactions').push({
+          type:'expense',date:txDate,desc:'COGS: '+summary.join(', '),
+          amount:totalCost,category:'Supplies',method:'cash',
+          reference:'COGS-'+saleId,notes:'Auto cost from Kassa',
+          ts:saleTs+1,createdBy:'kassa',source:'kassa'
+        });
+      }
+    }
   });
   basket={};
   renderKassa();
@@ -1006,6 +1050,70 @@ function showToast(msg){
   const ex=document.querySelector('.toast');if(ex)ex.remove();
   const t=document.createElement('div');t.className='toast';t.textContent=msg;
   document.body.appendChild(t);setTimeout(()=>t.remove(),2500);
+}
+
+
+// ── ACCOUNTING SYNC SETTINGS ──
+let accountingLinkId = '';
+
+function loadAccLink(){
+  db.ref('settings/accountingLink').once('value', snap=>{
+    const val = snap.val() || '';
+    accountingLinkId = val;
+    const inp = document.getElementById('acc-link-id');
+    if(inp) inp.value = val;
+    updateSyncStatus(val);
+  });
+  // live listen
+  db.ref('settings/accountingLink').on('value', snap=>{
+    accountingLinkId = snap.val() || '';
+  });
+}
+
+function saveAccLink(){
+  const id = document.getElementById('acc-link-id').value.trim().toLowerCase();
+  const status = document.getElementById('acc-link-status');
+  if(!id){ status.textContent='⚠️ Enter a company ID'; status.style.color='#e53e3e'; return; }
+  // Verify the accounting company exists
+  status.textContent='Checking...'; status.style.color='#888';
+  db.ref('accounting/'+id+'/company').once('value', snap=>{
+    if(!snap.val()){
+      status.textContent='❌ Accounting company "'+id+'" not found. Check the ID.';
+      status.style.color='#e53e3e';
+      return;
+    }
+    db.ref('settings/accountingLink').set(id);
+    accountingLinkId = id;
+    status.textContent='✅ Linked to "'+snap.val().name+'" successfully!';
+    status.style.color='#1a7a4a';
+    updateSyncStatus(id);
+    showToast('Accounting linked ✅');
+  });
+}
+
+function updateSyncStatus(id){
+  const el = document.getElementById('sync-status-info');
+  if(!el) return;
+  if(!id){
+    el.innerHTML='<span style="color:#e53e3e">⚠️ Not linked</span> — Enter an accounting company ID above to enable sync.';
+    return;
+  }
+  db.ref('accounting/'+id+'/company').once('value', snap=>{
+    const comp = snap.val();
+    if(!comp){
+      el.innerHTML='<span style="color:#e53e3e">❌ Company not found</span>';
+      return;
+    }
+    // Count synced transactions
+    db.ref('accounting/'+id+'/transactions').orderByChild('source').equalTo('kassa').once('value', tsnap=>{
+      const count = tsnap.val() ? Object.keys(tsnap.val()).length : 0;
+      el.innerHTML='<div style="display:flex;flex-direction:column;gap:6px">'
+        +'<div>🏢 <b>Linked to:</b> '+comp.name+'</div>'
+        +'<div>🔄 <b>Synced transactions:</b> '+count+'</div>'
+        +'<div style="color:#1a7a4a;font-weight:600">✅ Sync is active</div>'
+        +'</div>';
+    });
+  });
 }
 
 function fmt(n){return Number(Math.round(n)).toLocaleString();}
