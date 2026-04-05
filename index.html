@@ -150,6 +150,26 @@ input[type=text],input[type=number]{width:100%;padding:8px 10px;font-size:13px;b
 .f-btn.active{background:#1a7a4a;color:#fff;border-color:#1a7a4a}
 .po-empty{text-align:center;padding:40px 20px;color:#aaa;font-size:13px}
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none}
+.pay-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;display:flex;align-items:flex-end;justify-content:center;padding:0}
+.pay-overlay.hidden{display:none}
+.pay-sheet{background:#fff;border-radius:20px 20px 0 0;padding:24px 20px 32px;width:100%;max-width:480px}
+.pay-title{font-size:18px;font-weight:800;margin-bottom:4px}
+.pay-total{font-size:32px;font-weight:900;color:#1a7a4a;margin-bottom:20px}
+.pay-methods{display:flex;gap:8px;margin-bottom:20px}
+.pay-method{flex:1;padding:12px;border-radius:12px;border:2px solid #eee;background:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center;color:#888}
+.pay-method.active{border-color:#1a7a4a;color:#1a7a4a;background:#f0faf5}
+.pay-amount-label{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.pay-amount-input{width:100%;padding:14px;font-size:24px;font-weight:700;border-radius:12px;border:2px solid #ddd;background:#fafafa;font-family:inherit;text-align:right;margin-bottom:12px}
+.pay-amount-input:focus{outline:none;border-color:#1a7a4a}
+.pay-change{background:#f0faf5;border-radius:12px;padding:14px;display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.pay-change-label{font-size:13px;color:#888}
+.pay-change-val{font-size:22px;font-weight:800;color:#1a7a4a}
+.pay-change-val.negative{color:#e53e3e}
+.pay-shortcuts{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.pay-shortcut{padding:7px 12px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:#555}
+.pay-confirm{width:100%;background:#1a7a4a;color:#fff;border:none;border-radius:14px;padding:16px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit}
+.pay-confirm:disabled{opacity:.35;cursor:not-allowed}
+.pay-cancel{width:100%;background:transparent;border:none;color:#888;font-size:14px;cursor:pointer;font-family:inherit;margin-top:10px;padding:6px}
 </style>
 </head>
 <body>
@@ -198,7 +218,7 @@ input[type=text],input[type=number]{width:100%;padding:8px 10px;font-size:13px;b
   <div class="section-title">Basket</div>
   <div class="basket" id="basket-items"><div class="empty-basket">Nothing added yet</div></div>
   <div class="total-row"><span class="total-label">Total</span><span class="total-val" id="basket-total">0 sum</span></div>
-  <button class="btn-checkout" id="btn-checkout" onclick="checkout()" disabled>Confirm Sale</button>
+  <button class="btn-checkout" id="btn-checkout" onclick="openPayModal()" disabled>Confirm Sale</button>
 </div>
 
 <div id="page-stock" class="page">
@@ -613,7 +633,7 @@ function changeQty(id,delta){
 
 function changePrice(id,val){if(basket[id])basket[id].price=parseInt(val)||0;renderBasket();}
 
-function checkout(){
+function checkout(payMethodArg){
   const keys=Object.keys(basket);
   if(!keys.length)return;
   let summary=[],totalRevenue=0,totalCost=0,items=[];
@@ -632,7 +652,8 @@ function checkout(){
   const saleTs=Date.now();
   const saleId=saleTs.toString(36);
   db.ref('salelog').push({time:now(),msg:currentUser+': '+summary.join(', '),ts:saleTs});
-  db.ref('stafflog').push({cashier:currentUser,time:now(),ts:saleTs,total:totalRevenue,items,msg:summary.join(', '),id:saleId});
+  const usedMethod = payMethodArg || 'cash';
+  db.ref('stafflog').push({cashier:currentUser,time:now(),ts:saleTs,total:totalRevenue,items,msg:summary.join(', '),id:saleId,payMethod:usedMethod});
   // SYNC TO ACCOUNTING
   db.ref('settings/accountingLink').once('value',snap=>{
     const accId=snap.val();
@@ -1116,8 +1137,113 @@ function updateSyncStatus(id){
   });
 }
 
+
+// ── PAYMENT MODAL ──
+let payModalMethod = 'cash';
+let pendingTotal = 0;
+
+function openPayModal(){
+  const keys = Object.keys(basket);
+  if(!keys.length) return;
+  let total = 0;
+  keys.forEach(id=>{
+    const b = basket[id];
+    total += b.qty * b.price;
+  });
+  pendingTotal = total;
+  payModalMethod = 'cash';
+  document.getElementById('pay-total-display').textContent = fmt(total) + ' sum';
+  document.getElementById('pay-received').value = '';
+  document.getElementById('pay-change').textContent = '0 sum';
+  document.getElementById('pay-change').className = 'pay-change-val';
+  document.getElementById('pm-cash').classList.add('active');
+  document.getElementById('pm-card').classList.remove('active');
+  document.getElementById('cash-section').style.display = '';
+  document.getElementById('card-section').style.display = 'none';
+  document.getElementById('pay-confirm-btn').disabled = false;
+  // Quick amount shortcuts
+  const shortcuts = [
+    Math.ceil(total/1000)*1000,
+    Math.ceil(total/5000)*5000,
+    Math.ceil(total/10000)*10000,
+    Math.ceil(total/50000)*50000
+  ].filter((v,i,a)=>a.indexOf(v)===i&&v>=total).slice(0,4);
+  document.getElementById('pay-shortcuts').innerHTML = shortcuts.map(s=>
+    '<button class="pay-shortcut" onclick="setReceived('+s+')">'+fmt(s)+'</button>'
+  ).join('');
+  document.getElementById('pay-overlay').classList.remove('hidden');
+  setTimeout(()=>document.getElementById('pay-received').focus(), 100);
+}
+
+function closePayModal(){
+  document.getElementById('pay-overlay').classList.add('hidden');
+}
+
+function setPayMethod(method){
+  payModalMethod = method;
+  document.getElementById('pm-cash').classList.toggle('active', method==='cash');
+  document.getElementById('pm-card').classList.toggle('active', method==='card');
+  document.getElementById('cash-section').style.display = method==='cash' ? '' : 'none';
+  document.getElementById('card-section').style.display = method==='card' ? '' : 'none';
+  document.getElementById('pay-confirm-btn').disabled = false;
+}
+
+function setReceived(amount){
+  document.getElementById('pay-received').value = amount;
+  calcChange();
+}
+
+function calcChange(){
+  const received = parseFloat(document.getElementById('pay-received').value) || 0;
+  const change = received - pendingTotal;
+  const el = document.getElementById('pay-change');
+  el.textContent = fmt(Math.abs(change)) + ' sum';
+  if(change < 0){
+    el.className = 'pay-change-val negative';
+    document.getElementById('pay-confirm-btn').disabled = true;
+  } else {
+    el.className = 'pay-change-val';
+    document.getElementById('pay-confirm-btn').disabled = false;
+  }
+}
+
+function confirmPayment(){
+  closePayModal();
+  checkout(payModalMethod);
+}
+
 function fmt(n){return Number(Math.round(n)).toLocaleString();}
 function now(){const d=new Date();return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');}
 </script>
+<!-- PAYMENT MODAL -->
+<div class="pay-overlay hidden" id="pay-overlay">
+  <div class="pay-sheet">
+    <div class="pay-title">💳 Payment</div>
+    <div class="pay-total" id="pay-total-display">0 sum</div>
+    <div class="pay-methods">
+      <button class="pay-method active" id="pm-cash" onclick="setPayMethod('cash')">💵 Cash</button>
+      <button class="pay-method" id="pm-card" onclick="setPayMethod('card')">💳 Card</button>
+    </div>
+    <div id="cash-section">
+      <div class="pay-amount-label">Amount Received</div>
+      <input class="pay-amount-input" type="number" id="pay-received" placeholder="0" oninput="calcChange()"/>
+      <div class="pay-shortcuts" id="pay-shortcuts"></div>
+      <div class="pay-change">
+        <span class="pay-change-label">Change to give</span>
+        <span class="pay-change-val" id="pay-change">0 sum</span>
+      </div>
+    </div>
+    <div id="card-section" style="display:none">
+      <div style="background:#eff6ff;border-radius:12px;padding:16px;text-align:center;margin-bottom:16px">
+        <div style="font-size:32px;margin-bottom:6px">💳</div>
+        <div style="font-size:14px;color:#2563eb;font-weight:600">Card Payment</div>
+        <div style="font-size:13px;color:#888;margin-top:4px">Process card then confirm</div>
+      </div>
+    </div>
+    <button class="pay-confirm" id="pay-confirm-btn" onclick="confirmPayment()">✅ Confirm Sale</button>
+    <button class="pay-cancel" onclick="closePayModal()">Cancel</button>
+  </div>
+</div>
+
 </body>
 </html>
