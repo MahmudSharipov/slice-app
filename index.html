@@ -150,6 +150,8 @@ input[type=text],input[type=number]{width:100%;padding:8px 10px;font-size:13px;b
 .f-btn.active{background:#1a7a4a;color:#fff;border-color:#1a7a4a}
 .po-empty{text-align:center;padding:40px 20px;color:#aaa;font-size:13px}
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none}
+.combo-badge{font-size:10px;background:#fef3c7;color:#92400e;border-radius:20px;padding:2px 7px;font-weight:700;margin-left:4px}
+.combo-tag{font-size:10px;background:#f0faf5;color:#1a7a4a;border-radius:6px;padding:2px 6px;font-weight:600}
 .pay-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;display:flex;align-items:flex-end;justify-content:center;padding:0}
 .pay-overlay.hidden{display:none}
 .pay-sheet{background:#fff;border-radius:20px 20px 0 0;padding:24px 20px 32px;width:100%;max-width:480px}
@@ -241,6 +243,18 @@ input[type=text],input[type=number]{width:100%;padding:8px 10px;font-size:13px;b
         <input type="number" id="in-stock" placeholder="Stock qty"/>
         <button onclick="addProduct()" style="background:#1a7a4a;color:#fff;border-color:#1a7a4a">+ Add</button>
       </div>
+    </div>
+  </div>
+  <div id="add-combo-form">
+    <div class="section-title">Combos</div>
+    <div id="combo-list" style="margin-bottom:10px"></div>
+    <div class="section-title">Add new combo</div>
+    <div class="add-form">
+      <input type="text" id="combo-name" placeholder="Combo name (e.g. Breakfast Set)"/>
+      <input type="number" id="combo-price" placeholder="Combo price"/>
+      <div id="combo-items-wrap" style="display:flex;flex-direction:column;gap:6px;margin-top:4px"></div>
+      <button onclick="addComboItemRow()" style="font-size:12px;padding:6px 10px;color:#1a7a4a;border-color:#6ee7b7">+ Add product to combo</button>
+      <button onclick="saveCombo()" style="background:#1a7a4a;color:#fff;border-color:#1a7a4a">💾 Save Combo</button>
     </div>
   </div>
 </div>
@@ -397,6 +411,7 @@ const DEFAULT_PRODUCTS = [
 ];
 
 let products = [];
+let combos   = [];
 let saleLog  = [];
 let staffLog = [];
 let nextId   = 7;
@@ -526,6 +541,12 @@ function listenToFirebase(){
     }
     renderKassa();renderStock();renderAnalytics();
   });
+  db.ref('combos').on('value',snap=>{
+    const val=snap.val();
+    combos=val?Object.values(val):[];
+    renderKassa();
+    renderComboList();
+  });
   db.ref('salelog').on('value',snap=>{
     const val=snap.val();
     saleLog=val?Object.values(val).sort((a,b)=>a.ts-b.ts):[];
@@ -535,6 +556,7 @@ function listenToFirebase(){
     const val=snap.val();
     staffLog=val?Object.values(val).sort((a,b)=>b.ts-a.ts):[];
     renderStaff();
+    renderAnalytics();
   });
 }
 
@@ -569,26 +591,56 @@ function esc(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g
 function renderKassa(){
   const grid=document.getElementById('checkout-grid');
   if(!grid)return;
-  grid.innerHTML=products.map(p=>{
+  // Products
+  let html=products.map(p=>{
     const rem=p.stock-p.sold;
-    const sel=basket[p.id]?'selected':'';
+    const sel=basket['p_'+p.id]?'selected':'';
     const dis=rem<=0?'disabled-item':'';
     const sc=rem<=0?'out':rem<=5?'low':'';
     const st=rem<=0?'Out of stock':'📦 '+rem+' left';
-    return `<div class="c-item ${sel} ${dis}" onclick="${rem>0?'toggleBasket('+p.id+')':''}">
+    return `<div class="c-item ${sel} ${dis}" onclick="${rem>0?'toggleBasket('p_'+'+p.id+')':''}">
       <div class="c-item-name">${p.name}</div>
       <div class="c-item-price">${fmt(p.price)} sum</div>
       <div class="c-item-stock ${sc}">${st}</div>
     </div>`;
   }).join('');
+  // Combos
+  html+=combos.map(combo=>{
+    const avail=isComboAvailable(combo);
+    const sel=basket['c_'+combo.id]?'selected':'';
+    const dis=!avail?'disabled-item':'';
+    return `<div class="c-item ${sel} ${dis}" onclick="${avail?'toggleComboBasket(''+combo.id+'')':''}">
+      <div class="c-item-name">${combo.name} <span class="combo-badge">COMBO</span></div>
+      <div class="c-item-price">${fmt(combo.price)} sum</div>
+      <div class="c-item-stock">${avail?'✅ Available':'❌ Unavailable'}</div>
+    </div>`;
+  }).join('');
+  grid.innerHTML=html;
   renderBasket();
+}
+
+function isComboAvailable(combo){
+  return (combo.items||[]).every(ci=>{
+    const p=products.find(x=>x.id==ci.productId);
+    return p && (p.stock-p.sold)>=ci.qty;
+  });
+}
+
+function toggleComboBasket(comboId){
+  const combo=combos.find(x=>x.id===comboId);
+  if(!combo||!isComboAvailable(combo))return;
+  const key='c_'+comboId;
+  if(basket[key])delete basket[key];
+  else basket[key]={qty:1,price:combo.price,isCombo:true,combo};
+  renderKassa();
 }
 
 function toggleBasket(id){
   const p=products.find(x=>x.id===id);
   if(!p||p.stock-p.sold<=0)return;
-  if(basket[id])delete basket[id];
-  else basket[id]={qty:1,price:p.price};
+  const key='p_'+id;
+  if(basket[key])delete basket[key];
+  else basket[key]={qty:1,price:p.price,productId:id};
   renderKassa();
 }
 
@@ -603,51 +655,85 @@ function renderBasket(){
     return;
   }
   let total=0;
-  el.innerHTML=keys.map(id=>{
-    const p=products.find(x=>x.id==id);
-    const b=basket[id];
+  el.innerHTML=keys.map(key=>{
+    const b=basket[key];
     total+=b.qty*b.price;
+    const name=b.isCombo?b.combo.name+' 🎁':products.find(x=>x.id==b.productId)?.name||'?';
     return `<div class="basket-row">
-      <div class="b-name">${p.name}</div>
+      <div class="b-name">${name}${b.isCombo?'<br><span class="combo-tag">'+((b.combo.items||[]).map(ci=>{const p=products.find(x=>x.id==ci.productId);return (p?p.name:'?')+' x'+ci.qty;}).join(', '))+'</span>':''}</div>
       <div class="b-qty">
-        <button onclick="changeQty(${id},-1)">−</button>
+        <button onclick="changeQtyKey('${key}',-1)">−</button>
         <span style="font-size:14px;font-weight:600;min-width:18px;text-align:center">${b.qty}</span>
-        <button onclick="changeQty(${id},1)">+</button>
+        <button onclick="changeQtyKey('${key}',1)">+</button>
       </div>
-      <input class="b-price-input" type="number" value="${b.price}" onchange="changePrice(${id},this.value)"/>
+      <input class="b-price-input" type="number" value="${b.price}" onchange="changePriceKey('${key}',this.value)"/>
     </div>`;
   }).join('');
   document.getElementById('basket-total').textContent=fmt(total)+' sum';
   document.getElementById('btn-checkout').disabled=false;
 }
 
-function changeQty(id,delta){
-  if(!basket[id])return;
-  const p=products.find(x=>x.id==id);
-  const nq=basket[id].qty+delta;
-  if(nq<=0)delete basket[id];
-  else if(nq>p.stock-p.sold)return;
-  else basket[id].qty=nq;
+function changeQtyKey(key,delta){
+  if(!basket[key])return;
+  const b=basket[key];
+  const nq=b.qty+delta;
+  if(nq<=0){delete basket[key];}
+  else{
+    if(!b.isCombo){
+      const p=products.find(x=>x.id==b.productId);
+      if(nq>p.stock-p.sold)return;
+    } else {
+      const avail=(b.combo.items||[]).every(ci=>{
+        const p=products.find(x=>x.id==ci.productId);
+        return p&&(p.stock-p.sold)>=ci.qty*nq;
+      });
+      if(!avail)return;
+    }
+    basket[key].qty=nq;
+  }
   renderKassa();
 }
 
-function changePrice(id,val){if(basket[id])basket[id].price=parseInt(val)||0;renderBasket();}
+function changePriceKey(key,val){if(basket[key])basket[key].price=parseInt(val)||0;renderBasket();}
+
+function changeQty(id,delta){ changeQtyKey('p_'+id,delta); }
+function changePrice(id,val){ changePriceKey('p_'+id,val); }
 
 function checkout(payMethodArg){
   const keys=Object.keys(basket);
   if(!keys.length)return;
   let summary=[],totalRevenue=0,totalCost=0,items=[];
-  keys.forEach(id=>{
-    const p=products.find(x=>x.id==id);
-    const b=basket[id];
-    p.sold+=b.qty;
-    p.revenue=(p.revenue||0)+b.qty*b.price;
-    p.profit=(p.profit||0)+b.qty*(b.price-p.cost);
-    db.ref('products/'+p.id).set(p);
-    summary.push(`${b.qty}x ${p.name} @${fmt(b.price)}`);
-    totalRevenue+=b.qty*b.price;
-    totalCost+=b.qty*(p.cost||0);
-    items.push({name:p.name,qty:b.qty,price:b.price,cost:p.cost||0});
+  keys.forEach(key=>{
+    const b=basket[key];
+    if(b.isCombo){
+      // Deduct each product in the combo
+      let comboCost=0;
+      (b.combo.items||[]).forEach(ci=>{
+        const p=products.find(x=>x.id==ci.productId);
+        if(!p)return;
+        const totalQty=ci.qty*b.qty;
+        p.sold+=totalQty;
+        p.revenue=(p.revenue||0)+totalQty*(p.price||0);
+        p.profit=(p.profit||0)+totalQty*((p.price||0)-(p.cost||0));
+        db.ref('products/'+p.id).set(p);
+        comboCost+=totalQty*(p.cost||0);
+      });
+      summary.push(b.qty+'x '+b.combo.name+' (combo) @'+fmt(b.price));
+      totalRevenue+=b.qty*b.price;
+      totalCost+=comboCost;
+      items.push({name:b.combo.name+' (combo)',qty:b.qty,price:b.price,cost:comboCost/b.qty,isCombo:true});
+    } else {
+      const p=products.find(x=>x.id==b.productId);
+      if(!p)return;
+      p.sold+=b.qty;
+      p.revenue=(p.revenue||0)+b.qty*b.price;
+      p.profit=(p.profit||0)+b.qty*(b.price-p.cost);
+      db.ref('products/'+p.id).set(p);
+      summary.push(b.qty+'x '+p.name+' @'+fmt(b.price));
+      totalRevenue+=b.qty*b.price;
+      totalCost+=b.qty*(p.cost||0);
+      items.push({name:p.name,qty:b.qty,price:b.price,cost:p.cost||0});
+    }
   });
   const saleTs=Date.now();
   const saleId=saleTs.toString(36);
@@ -1051,7 +1137,7 @@ function renderOrders(){
         <span class="po-badge ${bc}">${lb}</span>
       </div>
       <div class="po-items">${itemsHtml}</div>
-      <div class="po-total">💳 Итого: ${fmt(total)} sum</div>
+      <div class="po-total">💵 Итого: ${fmt(total)} sum (Cash)</div>
       <div class="po-actions">${actions}</div>
     </div>`;
   }).join('');
@@ -1061,6 +1147,71 @@ function updateOrder(key,status){
   db.ref('preorders/'+key).update({status});
   const msgs={ready:'✅ Отмечено как Готово!',completed:'🎉 Заказ выдан!',cancelled:'Заказ отменён'};
   showToast(msgs[status]||'Обновлено');
+
+  // Only record as a sale when actually DELIVERED to customer
+  if(status==='completed'){
+    db.ref('preorders/'+key).once('value', snap=>{
+      const order = snap.val();
+      if(!order || order.alreadyRecorded) return;
+      const items = order.items || [];
+      let summary=[], totalRevenue=0, totalCost=0, saleItems=[];
+      items.forEach(it=>{
+        const p = products.find(x=>x.name===it.name);
+        if(!p) return;
+        const qty = it.qty || 1;
+        const price = it.price || p.price;
+        const cost = p.cost || 0;
+        p.sold = (p.sold||0) + qty;
+        p.revenue = (p.revenue||0) + qty*price;
+        p.profit = (p.profit||0) + qty*(price-cost);
+        db.ref('products/'+p.id).set(p);
+        summary.push(qty+'x '+p.name+' @'+fmt(price));
+        totalRevenue += qty*price;
+        totalCost += qty*cost;
+        saleItems.push({name:p.name, qty, price, cost});
+      });
+      if(!summary.length) return;
+      const saleTs = Date.now();
+      const saleId = saleTs.toString(36);
+      const cashier = currentUser;
+      db.ref('salelog').push({
+        time:now(), ts:saleTs,
+        msg:cashier+' (Bot order): '+summary.join(', ')
+      });
+      db.ref('stafflog').push({
+        cashier, time:now(), ts:saleTs,
+        total:totalRevenue, items:saleItems,
+        msg:'Bot order: '+summary.join(', '),
+        payMethod:'cash', source:'bot', id:saleId
+      });
+      // Mark as recorded so we dont double-count
+      db.ref('preorders/'+key).update({alreadyRecorded:true});
+      // Sync to accounting if linked
+      db.ref('settings/accountingLink').once('value',snap2=>{
+        const accId=snap2.val();
+        if(accId){
+          const txDate=new Date().toISOString().slice(0,10);
+          db.ref('accounting/'+accId+'/transactions').push({
+            type:'income', date:txDate,
+            desc:'Bot Order: '+summary.join(', '),
+            amount:totalRevenue, category:'Sales', method:'cash',
+            reference:'BOT-'+saleId,
+            notes:'Customer: '+(order.customerName||'Unknown')+' · Cashier: '+cashier,
+            ts:saleTs, createdBy:'kassa', source:'kassa'
+          });
+          if(totalCost>0){
+            db.ref('accounting/'+accId+'/transactions').push({
+              type:'expense', date:txDate,
+              desc:'COGS Bot Order: '+summary.join(', '),
+              amount:totalCost, category:'Supplies', method:'cash',
+              reference:'BOT-COGS-'+saleId,
+              ts:saleTs+1, createdBy:'kassa', source:'kassa'
+            });
+          }
+        }
+      });
+    });
+  }
 }
 
 function deleteOrder(key){
@@ -1210,6 +1361,74 @@ function calcChange(){
 function confirmPayment(){
   closePayModal();
   checkout(payModalMethod);
+}
+
+
+// ── COMBOS ──
+let comboItemCount = 0;
+
+function addComboItemRow(){
+  comboItemCount++;
+  const wrap = document.getElementById('combo-items-wrap');
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:6px;align-items:center';
+  row.id = 'combo-row-'+comboItemCount;
+  row.innerHTML = `
+    <select style="flex:1;padding:7px 8px;font-size:13px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-family:inherit" id="combo-prod-${comboItemCount}">
+      ${products.map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('')}
+    </select>
+    <input type="number" min="1" value="1" style="width:60px;padding:7px 8px;font-size:13px;border-radius:8px;border:1px solid #ddd;background:#fafafa" id="combo-qty-${comboItemCount}" placeholder="Qty"/>
+    <button onclick="document.getElementById('combo-row-${comboItemCount}').remove()" style="color:#e53e3e;border-color:#fca5a5;padding:6px 10px">✕</button>`;
+  wrap.appendChild(row);
+}
+
+function saveCombo(){
+  const name = document.getElementById('combo-name').value.trim();
+  const price = parseInt(document.getElementById('combo-price').value)||0;
+  if(!name||!price){showToast('Enter combo name and price');return;}
+  const rows = document.querySelectorAll('[id^="combo-row-"]');
+  const items = [];
+  rows.forEach(row=>{
+    const i = row.id.split('-')[2];
+    const productId = parseInt(document.getElementById('combo-prod-'+i)?.value);
+    const qty = parseInt(document.getElementById('combo-qty-'+i)?.value)||1;
+    if(productId) items.push({productId,qty});
+  });
+  if(!items.length){showToast('Add at least one product to the combo');return;}
+  const id = Date.now();
+  db.ref('combos/'+id).set({id,name,price,items,ts:Date.now(),createdBy:currentUser});
+  document.getElementById('combo-name').value='';
+  document.getElementById('combo-price').value='';
+  document.getElementById('combo-items-wrap').innerHTML='';
+  comboItemCount=0;
+  showToast('Combo saved ✅');
+}
+
+function deleteCombo(id){
+  if(confirm('Delete this combo?')) db.ref('combos/'+id).remove();
+}
+
+function renderComboList(){
+  const el=document.getElementById('combo-list');
+  if(!el)return;
+  if(!combos.length){el.innerHTML='<div style="font-size:13px;color:#aaa;margin-bottom:8px">No combos yet</div>';return;}
+  el.innerHTML=combos.map(combo=>{
+    const itemsDesc=(combo.items||[]).map(ci=>{
+      const p=products.find(x=>x.id==ci.productId);
+      return (p?p.name:'?')+' x'+ci.qty;
+    }).join(' + ');
+    return `<div class="item">
+      <div class="item-top">
+        <div class="item-info">
+          <div class="item-name">${combo.name} <span class="combo-badge">COMBO</span></div>
+          <div class="item-meta">Price: ${fmt(combo.price)} · Items: ${itemsDesc}</div>
+        </div>
+        <div class="item-right">
+          <button class="btn-red" onclick="deleteCombo(${combo.id})">✕</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function fmt(n){return Number(Math.round(n)).toLocaleString();}
