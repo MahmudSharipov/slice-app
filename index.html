@@ -251,7 +251,10 @@ input[type=text],input[type=number]{width:100%;padding:8px 10px;font-size:13px;b
         <input type="text" id="combo-name" placeholder="Combo name (e.g. Breakfast Set)"/>
         <input type="number" id="combo-price" placeholder="Combo price"/>
         <div id="combo-items-wrap" style="display:flex;flex-direction:column;gap:6px;margin-top:4px"></div>
-        <button onclick="addComboItemRow()" style="font-size:12px;padding:6px 10px;color:#1a7a4a;border-color:#6ee7b7">+ Add product to combo</button>
+        <div style="display:flex;gap:6px">
+          <button onclick="addComboItemRow('fixed')" style="font-size:12px;padding:6px 10px;color:#1a7a4a;border-color:#6ee7b7;flex:1">+ Fixed item</button>
+          <button onclick="addComboItemRow('choice')" style="font-size:12px;padding:6px 10px;color:#d97706;border-color:#fcd34d;flex:1">+ Choice item</button>
+        </div>
         <button onclick="saveCombo()" style="background:#1a7a4a;color:#fff;border-color:#1a7a4a">Save Combo</button>
       </div>
     </div>
@@ -582,7 +585,7 @@ function renderKassa(){
     const avail=isComboAvailable(combo);
     const sel=basket['c_'+combo.id]?'selected':'';
     const dis=!avail?'disabled-item':'';
-    const click=avail?'toggleComboBasket("'+combo.id+'")':'';
+    const click=avail?'toggleComboBasket('+combo.id+')':'';
     html+='<div class="c-item '+sel+' '+dis+'" onclick="'+click+'">'
       +'<div class="c-item-name">'+combo.name+' <span class="combo-badge">COMBO</span></div>'
       +'<div class="c-item-price">'+fmt(combo.price)+' sum</div>'
@@ -596,8 +599,15 @@ function renderKassa(){
 
 function isComboAvailable(combo){
   return (combo.items||[]).every(function(ci){
+    if(ci.type==='choice'){
+      // Available if at least ONE choice option is in stock
+      return (ci.choices||[]).some(function(pid){
+        const p=products.find(function(x){return x.id==pid;});
+        return p&&(p.stock-p.sold)>=(ci.qty||1);
+      });
+    }
     const p=products.find(function(x){return x.id==ci.productId;});
-    return p&&(p.stock-p.sold)>=ci.qty;
+    return p&&(p.stock-p.sold)>=(ci.qty||1);
   });
 }
 
@@ -614,8 +624,92 @@ function toggleComboBasket(comboId){
   const combo=combos.find(function(x){return String(x.id)===String(comboId);});
   if(!combo||!isComboAvailable(combo))return;
   const key='c_'+comboId;
-  if(basket[key])delete basket[key];
-  else basket[key]={qty:1,price:combo.price,isCombo:true,combo:combo};
+  if(basket[key]){delete basket[key];renderKassa();return;}
+  // Check if combo has choice items
+  const choiceItems=(combo.items||[]).filter(function(ci){return ci.type==='choice';});
+  if(choiceItems.length>0){
+    showComboChoiceSheet(combo,choiceItems,key);
+  } else {
+    basket[key]={qty:1,price:combo.price,isCombo:true,combo:combo,choices:{}};
+    renderKassa();
+  }
+}
+
+
+function closeComboSheet(){var s=document.getElementById('combo-choice-sheet');if(s)s.remove();}
+function showComboChoiceSheet(combo,choiceItems,basketKey){
+  const existing=document.getElementById('combo-choice-sheet');
+  if(existing)existing.remove();
+  const sheet=document.createElement('div');
+  sheet.id='combo-choice-sheet';
+  sheet.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:600;display:flex;align-items:flex-end;justify-content:center;padding:0';
+  let html='<div style="background:#fff;border-radius:20px 20px 0 0;padding:24px 20px 32px;width:100%;max-width:480px">'
+    +'<div style="font-size:18px;font-weight:800;margin-bottom:4px">'+combo.name+'</div>'
+    +'<div style="font-size:13px;color:#888;margin-bottom:20px">Choose your options:</div>';
+  choiceItems.forEach(function(ci,idx){
+    html+='<div style="margin-bottom:16px">'
+      +'<div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Choose 1:</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+    (ci.choices||[]).forEach(function(pid){
+      const p=products.find(function(x){return x.id==pid;});
+      if(!p)return;
+      const rem=p.stock-p.sold;
+      const dis=rem<=0;
+      html+='<button id="choice-btn-'+idx+'-'+pid+'" onclick="selectChoice('+idx+','+pid+')" '
+        +'style="padding:12px;border-radius:12px;border:2px solid #eee;background:#fff;font-size:13px;font-weight:600;cursor:'+(dis?'not-allowed':'pointer')+';opacity:'+(dis?'.4':'1')+';font-family:inherit;text-align:left">'
+        +'<div>'+p.name+'</div>'
+        +'<div style="font-size:11px;color:#888;margin-top:2px">📦 '+rem+' left</div>'
+        +'</button>';
+    });
+    html+='</div></div>';
+  });
+  sheet.setAttribute('data-combo-id',combo.id);
+  sheet.setAttribute('data-basket-key',basketKey);
+  html+='<button id="combo-choice-confirm" onclick="confirmComboChoice()" style="width:100%;background:#1a7a4a;color:#fff;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:8px" disabled>Add to basket</button>'
+    +'<button onclick="closeComboSheet()" style="width:100%;background:transparent;border:none;color:#888;font-size:14px;cursor:pointer;font-family:inherit;margin-top:10px;padding:6px">Cancel</button>'
+    +'</div>';
+  sheet.innerHTML=html;
+  document.body.appendChild(sheet);
+  window._comboChoices={};
+  window._choiceItemsCount=choiceItems.length;
+}
+
+function selectChoice(idx,pid){
+  if(!window._comboChoices)window._comboChoices={};
+  window._comboChoices[idx]=pid;
+  // Highlight selected
+  document.querySelectorAll('[id^="choice-btn-'+idx+'-"]').forEach(function(btn){
+    btn.style.borderColor='#eee';btn.style.background='#fff';btn.style.color='#1a1a1a';
+  });
+  const selected=document.getElementById('choice-btn-'+idx+'-'+pid);
+  if(selected){selected.style.borderColor='#1a7a4a';selected.style.background='#f0faf5';selected.style.color='#1a7a4a';}
+  // Enable confirm if all choices made
+  if(Object.keys(window._comboChoices).length>=window._choiceItemsCount){
+    const btn=document.getElementById('combo-choice-confirm');
+    if(btn){btn.disabled=false;}
+  }
+}
+
+function confirmComboChoice(){
+  const sheet=document.getElementById('combo-choice-sheet');
+  const comboId=sheet&&sheet.getAttribute('data-combo-id');
+  const basketKey=sheet&&sheet.getAttribute('data-basket-key');
+  const combo=combos.find(function(x){return String(x.id)===String(comboId);});
+  if(!combo)return;
+  if(sheet)sheet.remove();
+  // Build resolved combo with choices filled in
+  const resolvedCombo=JSON.parse(JSON.stringify(combo));
+  const choiceMap=window._comboChoices||{};
+  let choiceIdx=0;
+  resolvedCombo.items=(combo.items||[]).map(function(ci){
+    if(ci.type==='choice'){
+      const chosen=choiceMap[choiceIdx];
+      choiceIdx++;
+      return {type:'fixed',productId:chosen,qty:ci.qty||1,_wasChoice:true};
+    }
+    return ci;
+  });
+  basket[basketKey]={qty:1,price:combo.price,isCombo:true,combo:resolvedCombo,choices:choiceMap};
   renderKassa();
 }
 
@@ -638,9 +732,10 @@ function renderBasket(){
     if(b.isCombo){
       name=b.combo.name+' 🎁';
       const itemDesc=(b.combo.items||[]).map(function(ci){
+        if(!ci.productId)return null;
         const p=products.find(function(x){return x.id==ci.productId;});
-        return (p?p.name:'?')+' x'+ci.qty;
-      }).join(', ');
+        return (p?p.name:'?')+(ci._wasChoice?' ✓':'')+' x'+(ci.qty||1);
+      }).filter(Boolean).join(', ');
       sub='<br><span class="combo-tag">'+itemDesc+'</span>';
     } else {
       const p=products.find(function(x){return x.id==b.productId;});
@@ -671,9 +766,9 @@ function changeQtyKey(key,delta){
       const p=products.find(function(x){return x.id==b.productId;});
       if(nq>(p.stock-p.sold))return;
     } else {
-      const ok=(b.combo.items||[]).every(function(ci){
+      const ok=(b.combo.items||[]).filter(function(ci){return ci.productId;}).every(function(ci){
         const p=products.find(function(x){return x.id==ci.productId;});
-        return p&&(p.stock-p.sold)>=ci.qty*nq;
+        return p&&(p.stock-p.sold)>=(ci.qty||1)*nq;
       });
       if(!ok)return;
     }
@@ -693,16 +788,18 @@ function checkout(payMethodArg){
     if(b.isCombo){
       let comboCost=0;
       (b.combo.items||[]).forEach(function(ci){
+        // Only deduct if productId is set (choice items are resolved before adding to basket)
+        if(!ci.productId)return;
         const p=products.find(function(x){return x.id==ci.productId;});
         if(!p)return;
-        const tq=ci.qty*b.qty;
+        const tq=(ci.qty||1)*b.qty;
         p.sold+=tq;p.revenue=(p.revenue||0)+tq*(p.price||0);p.profit=(p.profit||0)+tq*((p.price||0)-(p.cost||0));
         db.ref('products/'+p.id).set(p);
         comboCost+=tq*(p.cost||0);
       });
       summary.push(b.qty+'x '+b.combo.name+' (combo) @'+fmt(b.price));
       totalRevenue+=b.qty*b.price;totalCost+=comboCost;
-      items.push({name:b.combo.name+' (combo)',qty:b.qty,price:b.price,cost:comboCost/b.qty,isCombo:true});
+      items.push({name:b.combo.name+' (combo)',qty:b.qty,price:b.price,cost:b.qty>0?comboCost/b.qty:0,isCombo:true});
     } else {
       const p=products.find(function(x){return x.id==b.productId;});
       if(!p)return;
@@ -1122,10 +1219,21 @@ function saveCombo(){
   const rows=document.querySelectorAll('[id^="combo-row-"]');
   const items=[];
   rows.forEach(function(row){
-    const i=row.id.split('-')[2];
-    const productId=parseInt(document.getElementById('combo-prod-'+i)&&document.getElementById('combo-prod-'+i).value);
-    const qty=parseInt(document.getElementById('combo-qty-'+i)&&document.getElementById('combo-qty-'+i).value)||1;
-    if(productId)items.push({productId:productId,qty:qty});
+    const i=row.id.replace('combo-row-','');
+    const type=row.getAttribute('data-type')||'fixed';
+    if(type==='choice'){
+      // Collect all choice options
+      const opts=row.querySelectorAll('[id^="choice-prod-"]');
+      const choices=[];
+      opts.forEach(function(sel){choices.push(parseInt(sel.value));});
+      if(choices.length>0)items.push({type:'choice',choices:choices,qty:1});
+    } else {
+      const sel=document.getElementById('combo-prod-'+i);
+      const qtyEl=document.getElementById('combo-qty-'+i);
+      const productId=sel?parseInt(sel.value):0;
+      const qty=qtyEl?parseInt(qtyEl.value)||1:1;
+      if(productId)items.push({type:'fixed',productId:productId,qty:qty});
+    }
   });
   if(!items.length){showToast('Add at least one product');return;}
   const id=Date.now();
@@ -1144,8 +1252,12 @@ function renderComboList(){
   if(!combos.length){el.innerHTML='<div style="font-size:13px;color:#aaa;margin-bottom:8px">No combos yet</div>';return;}
   el.innerHTML=combos.map(function(combo){
     const itemsDesc=(combo.items||[]).map(function(ci){
+      if(ci.type==='choice'){
+        const names=(ci.choices||[]).map(function(pid){const p=products.find(function(x){return x.id==pid;});return p?p.name:'?';});
+        return '[Choice: '+names.join(' / ')+']';
+      }
       const p=products.find(function(x){return x.id==ci.productId;});
-      return (p?p.name:'?')+' x'+ci.qty;
+      return (p?p.name:'?')+' x'+(ci.qty||1);
     }).join(' + ');
     return '<div class="item"><div class="item-top"><div class="item-info"><div class="item-name">'+combo.name+' <span class="combo-badge">COMBO</span></div><div class="item-meta">Price: '+fmt(combo.price)+' · Items: '+itemsDesc+'</div></div><div class="item-right"><button class="btn-red" onclick="deleteCombo('+combo.id+')">✕</button></div></div></div>';
   }).join('');
